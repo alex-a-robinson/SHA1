@@ -1,72 +1,83 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+
 import struct
 
-def leftRotate(a, b):
-	return ((a << b) | (a >> (32 - b))) & 0xffffffff
+def rol32(a,n):
+	'''Returns a left rotated by n places.'''
+	return ((a << n) | (a >> (32 - n))) & 0xffffffff # Ensures 32-bit
 
-message = "test"
+class Sha1:
+	def __init__(self, message):
+		self.msg = bytearray(message, 'utf-8')
+		self.msgByteLen = len(self.msg)
+		self.msgBitLen = self.msgByteLen * 8
 
-h0 = 0x67452301
-h1 = 0xEFCDAB89
-h2 = 0x98BADCFE
-h3 = 0x10325476
-h4 = 0xC3D2E1F0
+		# Initilise varibles
+		self.h0 = 0x67452301
+		self.h1 = 0xEFCDAB89
+		self.h2 = 0x98BADCFE
+		self.h3 = 0x10325476
+		self.h4 = 0xC3D2E1F0
 
-messageLengthInBytes = len(message)
-messageLengthInBits = messageLengthInBytes * 8
+	def preProccessing(self):
+		'''Add 1 and pad message so bit length is congruent to 448 (mod 512)
+		then append the the message bit length'''
+		self.msg += b'\x80'
+		self.msg += b'\x00' * ((56 - (self.msgByteLen + 1) % 64) % 64)
+		self.msg += struct.pack(b'>Q', self.msgBitLen)
 
-# Pre-proccessing:
+	def proccess(self):
+		for i in range(0, len(self.msg), 64): # for each 64 byte chunk
+			w = [0] * 80 # Generate empty list of 80 words
+			for j in range(16): # Spit into 16 4 byte words
+				w[j] = struct.unpack(b'>I', self.msg[i + j * 4: i + j * 4 + 4])[0]
+			for j in range(16, 80): # Generate another 64 words from original 16
+				w[j] = rol32(w[j-3] ^ w[j-8] ^ w[j-14] ^ w[j-16], 1)
 
-# append bit '1'
-message += b'\x80'
+			# Initilize hash values for chunk
+			a = self.h0
+			b = self.h1
+			c = self.h2
+			d = self.h3
+			e = self.h4
 
-# Pad message with zeros until bit length is congruent to 448 (mod 512)
-message += b'\x00' * ((56 - (messageLengthInBytes + 1) % 64) % 64)
+			# Compression function
+			for i in range(80):
+				if (0 <= i <= 19):
+					f = d ^ (b & (c ^ d))
+					k = 0x5A827999
+				elif (20 <= i <= 39):
+					f = b ^ c ^ d
+					k = 0x6ED9EBA1
+				elif (40 <= i <= 59):
+					f = (b & c) | (b & d) | (c & d)
+					k = 0x8F1BBCDC
+				elif (60 <= i <= 79):
+					f = b ^ c ^ d
+					k = 0xCA62C1D6
 
-# Split message into 512 bit chunks (64 bytes)
-message += struct.pack(b'>Q', messageLengthInBits)
-print(message)
-# Proccess chunks
-for i in range(0, len(message), 64):
-	w = [0] * 80
-	# break chunk into sixteen 32-bit big-endian words w[i]
-	for j in range(16):
-		w[j] = struct.unpack(b'>I', message[i + j*4:i + j*4 + 4])[0]
-		#Extend the sixteen 32-bit words into eighty 32-bit words:
-	for j in range(16, 80):
-		w[j] = leftRotate(w[j-3] ^ w[j-8] ^ w[j-14] ^ w[j-16], 1)
+				temp = rol32(a, 5) + f + e + k + w[i] & 0xffffffff # Ensure 32-bit
+				e = d
+				d = c
+				c = rol32(b, 30)
+				b = a
+				a = temp
 
-	# Initialize hash values for chunk
-	a = h0
-	b = h1
-	c = h2
-	d = h3
-	e = h4
+			h0 = (self.h0 + a) & 0xffffffff # Ensure 32-bit
+			h1 = (self.h1 + b) & 0xffffffff
+			h2 = (self.h2 + c) & 0xffffffff
+			h3 = (self.h3 + d) & 0xffffffff
+			h4 = (self.h4 + e) & 0xffffffff
 
-	for i in range(80):
-		if 0 <= i <= 19:
-			f = d ^ (b & (c ^ d))
-			k = 0x5A827999
-		elif 20 <= i <= 39:
-			f = b ^ c ^ d
-			k = 0x6ED9EBA1
-		elif 40 <= i <= 59:
-			f = (b & c) | (b & d) | (c & d)
-			k = 0x8F1BBCDC
-		elif 60 <= i <= 79:
-			f = b ^ c ^ d
-			k = 0xCA62C1D6
+		return '%08x%08x%08x%08x%08x' % (h0, h1, h2, h3, h4)
 
-		temp = leftRotate(a, 5) + f + e + k + w[i] & 0xffffffff # Why this?
-		e = d
-		d = c
-		c = leftRotate(b, 30)
-		b = a
-		a = temp
+	def digest(self):
+		self.preProccessing()
+		return self.proccess()
 
-	h0 = (h0 + a) & 0xffffffff # Why this?
-	h1 = (h1 + b) & 0xffffffff
-	h2 = (h2 + c) & 0xffffffff
-	h3 = (h3 + d) & 0xffffffff
-	h4 = (h4 + e) & 0xffffffff
+a = Sha1('test')
+print(a.digest())
 
-print ('%08x%08x%08x%08x%08x' % (h0, h1, h2, h3, h4))
+
+
